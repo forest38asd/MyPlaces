@@ -9,6 +9,7 @@ import UIKit
 
 class NewPlaceViewController: UITableViewController {
     
+    var currentPlace: Place?
     var imageIsChanged = false
 
     @IBOutlet weak var saveButton: UIBarButtonItem!
@@ -17,13 +18,19 @@ class NewPlaceViewController: UITableViewController {
     @IBOutlet weak var placeName: UITextField!
     @IBOutlet weak var placeLocation: UITextField!
     @IBOutlet weak var placeType: UITextField!
+    @IBOutlet weak var ratingControl: RatingControl!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        tableView.tableFooterView = UIView()
+        tableView.tableFooterView = UIView(frame: CGRect(x: 0,
+                                                         y: 0,
+                                                         width: tableView.frame.size.width,
+                                                         height: 1))
+        
         saveButton.isEnabled = false
         placeName.addTarget(self, action: #selector(textFieldChanged), for: .editingChanged)
+        setupEditScreenIfNecessary()
     }
     
     // MARK: Table view delegate
@@ -58,20 +65,66 @@ class NewPlaceViewController: UITableViewController {
         }
     }
     
-    func saveNewPlace() {
-        var image: UIImage?
+    // MARK: - Navigation
+    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        guard
+            let identifier = segue.identifier,
+            let mapVC = segue.destination as? MapViewController
+        else { return }
         
-        if imageIsChanged {
-            image = placeImage.image
-        } else {
-            image = UIImage(named: "imagePlaceholder")
+        mapVC.incomeSegueIdentifier = identifier
+        mapVC.mapViewControllerDelegate = self
+        
+        if identifier == "showPlace" {
+            mapVC.place.name = placeName.text!
+            mapVC.place.location = placeLocation.text
+            mapVC.place.type = placeType.text
+            mapVC.place.imageData = placeImage.image?.pngData()
         }
+    }
+    
+    func savePlace() {
+        let image = imageIsChanged ? placeImage.image : UIImage(named: "imagePlaceholder")
         
         let imageData = image?.pngData()
         
-        let newPlace = Place(name: placeName.text!, location: placeLocation.text, type: placeType.text, imageData: imageData)
+        let newPlace = Place(name: placeName.text!, location: placeLocation.text, type: placeType.text, imageData: imageData, rating: Double(ratingControl.rating))
         
-        StorageManager.saveObject(newPlace)
+        if let currentPlace = currentPlace {
+            try! realm.write {
+                currentPlace.name = newPlace.name
+                currentPlace.location = newPlace.location
+                currentPlace.type = newPlace.type
+                currentPlace.imageData = newPlace.imageData
+                currentPlace.rating = newPlace.rating
+            }
+        } else {
+            StorageManager.saveObject(newPlace)
+        }
+    }
+    
+    private func setupEditScreenIfNecessary() {
+        if let currentPlace = currentPlace, let data = currentPlace.imageData, let image = UIImage(data: data) {
+            setupNavigationBar()
+            imageIsChanged = true
+            
+            placeImage.image = image
+            placeImage.contentMode = .scaleAspectFill
+            placeName.text = currentPlace.name
+            placeLocation.text = currentPlace.location
+            placeType.text = currentPlace.type
+            ratingControl.rating = Int(currentPlace.rating)
+        }
+    }
+    
+    private func setupNavigationBar() {
+//        if let topItem = navigationController?.navigationBar.topItem {
+//            topItem.backBarButtonItem = UIBarButtonItem(title: "", style: .plain, target: nil, action: nil)
+//        }
+        navigationItem.leftBarButtonItem = nil
+        title = currentPlace?.name
+        saveButton.isEnabled = true
     }
     
     @IBAction func cancelAction(_ sender: UIBarButtonItem) {
@@ -118,5 +171,11 @@ extension NewPlaceViewController: UIImagePickerControllerDelegate, UINavigationC
         imageIsChanged = true
         
         dismiss(animated: true)
+    }
+}
+
+extension NewPlaceViewController: MapViewControllerDelegate {
+    func getAddress(_ address: String?) {
+        placeLocation.text = address
     }
 }
